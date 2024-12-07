@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Interface de Estudos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .study-container {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        #videoPlayer, #audioPlayer, #pdfViewer {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .file-input-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .file-input {
+            display: none;
+        }
+        .custom-file-upload {
+            border: 1px solid #ccc;
+            display: inline-block;
+            padding: 6px 12px;
+            cursor: pointer;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .custom-file-upload:hover {
+            background-color: #e9ecef;
+        }
+        .audio-controls {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .playback-info {
+            display: flex;
+            align-items: center;
+            margin-left: 15px;
+            gap: 5px;
+        }
+        .playback-info svg {
+            width: 20px;
+            height: 20px;
+        }
+        .audio-info {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="study-container">
+        <h1>Interface de Estudos</h1>
+        
+        <div class="file-input-container">
+            <label class="custom-file-upload">
+                Selecionar Vídeo
+                <input type="file" id="videoInput" class="file-input" accept="video/*">
+            </label>
+            
+            <label class="custom-file-upload">
+                Selecionar Áudio
+                <input type="file" id="audioInput" class="file-input" accept="audio/*">
+            </label>
+            
+            <label class="custom-file-upload">
+                Selecionar PDF
+                <input type="file" id="pdfInput" class="file-input" accept=".pdf">
+            </label>
+        </div>
+
+        <video id="videoPlayer" controls style="display:none;"></video>
+        
+        <div id="audioContainer" style="display:none;">
+            <audio id="audioPlayer" controls></audio>
+            <div class="audio-controls">
+                <div class="playback-info">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.964-7.178Z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                    </svg>
+                    <span id="playCount">0</span>
+                </div>
+                <label style="margin-left: 15px;">
+                    <input type="checkbox" id="repeatAudio"> Repetir automaticamente
+                </label>
+            </div>
+            <div class="audio-info">
+                Arquivo atual: <span id="currentAudioName">Nenhum</span>
+            </div>
+        </div>
+        
+        <iframe id="pdfViewer" style="width:100%; height:600px; border:1px solid #ddd; display:none;"></iframe>
+    </div>
+
+    <script>
+        const DB_NAME = 'StudyInterfaceDB';
+        const DB_VERSION = 8; // Incrementado para forçar uma nova versão do banco de dados
+        let db;
+        let currentAudioFile = null;
+        let currentPlayCount = 0; // Variável global para controlar a contagem de reproduções
+
+        const MEDIA_ELEMENTS = {
+            video: { 
+                elementId: 'videoPlayer', 
+                type: 'video/*' 
+            },
+            audio: { 
+                elementId: 'audioPlayer', 
+                type: 'audio/*' 
+            },
+            pdf: { 
+                elementId: 'pdfViewer', 
+                type: 'application/pdf' 
+            }
+        };
+
+        function initIndexedDB() {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            
+            request.onupgradeneeded = function(event) {
+                db = event.target.result;
+                
+                // Limpar lojas existentes se já existirem para evitar conflitos
+                if (db.objectStoreNames.contains('mediaFiles')) {
+                    db.deleteObjectStore('mediaFiles');
+                }
+                db.createObjectStore('mediaFiles', { keyPath: 'type' });
+                
+                if (db.objectStoreNames.contains('audioData')) {
+                    db.deleteObjectStore('audioData');
+                }
+                db.createObjectStore('audioData', { keyPath: 'fileName' });
+            };
+
+            request.onsuccess = function(event) {
+                db = event.target.result;
+                console.log("IndexedDB inicializado com sucesso");
+                loadSavedFiles();
+            };
+
+            request.onerror = function(event) {
+                console.error("Erro ao abrir IndexedDB:", event.target.error);
+            };
+        }
+
+        function saveAudioData(fileName, playCount, repeatChecked) {
+            if (!db) return;
+            
+            const transaction = db.transaction(['audioData'], 'readwrite');
+            const store = transaction.objectStore('audioData');
+            
+            store.put({
+                fileName: fileName,
+                playCount: playCount,
+                repeatChecked: repeatChecked
+            });
+        }
+
+        function loadAudioData(fileName) {
+            return new Promise((resolve) => {
+                if (!db) {
+                    resolve({ playCount: 0, repeatChecked: false });
+                    return;
+                }
+                
+                const transaction = db.transaction(['audioData'], 'readonly');
+                const store = transaction.objectStore('audioData');
+                
+                const request = store.get(fileName);
+                
+                request.onsuccess = function(event) {
+                    const result = event.target.result;
+                    resolve(result || { playCount: 0, repeatChecked: false });
+                };
+                
+                request.onerror = function() {
+                    resolve({ playCount: 0, repeatChecked: false });
+                };
+            });
+        }
+
+        function setupAudioListeners() {
+            const audioPlayer = document.getElementById('audioPlayer');
+            const repeatCheckbox = document.getElementById('repeatAudio');
+            const playCountDisplay = document.getElementById('playCount');
+
+            audioPlayer.addEventListener('play', function() {
+                // Incrementa a contagem apenas se não estiver repetindo
+                if (!repeatCheckbox.checked) {
+                    currentPlayCount++;
+                    playCountDisplay.textContent = currentPlayCount;
+                }
+            });
+
+            audioPlayer.addEventListener('ended', async function() {
+                if (currentAudioFile) {
+                    // Incrementa a contagem no final da reprodução
+                    currentPlayCount++;
+                    playCountDisplay.textContent = currentPlayCount;
+                    
+                    saveAudioData(
+                        currentAudioFile.name, 
+                        currentPlayCount, 
+                        repeatCheckbox.checked
+                    );
+                }
+                
+                if (repeatCheckbox.checked) {
+                    audioPlayer.currentTime = 0;
+                    audioPlayer.play();
+                }
+            });
+
+            repeatCheckbox.addEventListener('change', function() {
+                if (currentAudioFile) {
+                    saveAudioData(
+                        currentAudioFile.name, 
+                        currentPlayCount, 
+                        repeatCheckbox.checked
+                    );
+                }
+            });
+        }
+
+        async function handleNewAudioFile(file) {
+            currentAudioFile = file;
+            
+            // Recuperar dados salvos para este arquivo
+            const savedData = await loadAudioData(file.name);
+            
+            // Configurar player de áudio
+            const audioPlayer = document.getElementById('audioPlayer');
+            const repeatCheckbox = document.getElementById('repeatAudio');
+            const playCountDisplay = document.getElementById('playCount');
+            
+            const fileURL = URL.createObjectURL(file);
+            audioPlayer.src = fileURL;
+            
+            // Restaurar contagem de reproduções
+            currentPlayCount = savedData.playCount || 0;
+            playCountDisplay.textContent = currentPlayCount;
+            
+            // Restaurar preferência de repetição
+            repeatCheckbox.checked = savedData.repeatChecked;
+            
+            // Mostrar container de áudio
+            document.getElementById('audioContainer').style.display = 'block';
+            document.getElementById('currentAudioName').textContent = file.name;
+        }
+
+        function saveFile(type, file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                
+                reader.onload = function(event) {
+                    try {
+                        const transaction = db.transaction(['mediaFiles'], 'readwrite');
+                        const store = transaction.objectStore('mediaFiles');
+                        
+                        const fileEntry = {
+                            type: type,
+                            data: event.target.result,
+                            name: file.name,
+                            mimeType: file.type
+                        };
+
+                        const request = store.put(fileEntry);
+                        
+                        request.onsuccess = () => {
+                            console.log(`Arquivo ${type} salvo com sucesso`);
+                            resolve();
+                        };
+                        
+                        request.onerror = (error) => {
+                            console.error(`Erro ao salvar arquivo ${type}:`, error);
+                            reject(error);
+                        };
+                    } catch (error) {
+                        console.error("Erro no processo de salvamento:", error);
+                        reject(error);
+                    }
+                };
+
+                reader.onerror = (error) => {
+                    console.error("Erro no FileReader:", error);
+                    reject(error);
+                };
+
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function loadSavedFiles() {
+            const transaction = db.transaction(['mediaFiles'], 'readonly');
+            const store = transaction.objectStore('mediaFiles');
+
+            Object.keys(MEDIA_ELEMENTS).forEach(mediaType => {
+                const request = store.get(mediaType);
+                
+                request.onsuccess = function(event) {
+                    const result = event.target.result;
+                    
+                    if (result) {
+                        const elementId = MEDIA_ELEMENTS[mediaType].elementId;
+                        const filePlayer = document.getElementById(elementId);
+                        
+                        if (!filePlayer) {
+                            console.error(`Elemento ${elementId} não encontrado!`);
+                            return;
+                        }
+
+                        const blob = new Blob([result.data], { type: result.mimeType });
+                        const fileURL = URL.createObjectURL(blob);
+                        
+                        filePlayer.src = fileURL;
+                        if (mediaType === 'audio') {
+                            currentAudioFile = {
+                                name: result.name,
+                                type: result.mimeType
+                            };
+                            
+                            loadAudioData(result.name).then(savedData => {
+                                document.getElementById('audioContainer').style.display = 'block';
+                                document.getElementById('currentAudioName').textContent = result.name;
+                                currentPlayCount = savedData.playCount || 0;
+                                document.getElementById('playCount').textContent = currentPlayCount;
+                                document.getElementById('repeatAudio').checked = savedData.repeatChecked;
+                            });
+                        } else {
+                            filePlayer.style.display = 'block';
+                        }
+                    }
+                };
+            });
+        }
+
+        function setupFileListeners() {
+            Object.keys(MEDIA_ELEMENTS).forEach(mediaType => {
+                const input = document.getElementById(`${mediaType}Input`);
+                const elementId = MEDIA_ELEMENTS[mediaType].elementId;
+
+                input.addEventListener('change', async function(e) {
+                    const file = e.target.files[0];
+                    
+                    if (mediaType === 'audio') {
+                        // Resetar a contagem para um novo arquivo
+                        currentPlayCount = 0;
+                        document.getElementById('playCount').textContent = currentPlayCount;
+                        await handleNewAudioFile(file);
+                    } else {
+                        const filePlayer = document.getElementById(elementId);
+                        if (!filePlayer) {
+                            console.error(`Elemento ${elementId} não encontrado!`);
+                            return;
+                        }
+
+                        const fileURL = URL.createObjectURL(file);
+                        filePlayer.src = fileURL;
+                        filePlayer.style.display = 'block';
+                    }
+
+                    try {
+                        await saveFile(mediaType, file);
+                    } catch (error) {
+                        console.error(`Erro ao processar ${mediaType}:`, error);
+                        alert(`Erro ao salvar ${mediaType}`);
+                    }
+                });
+            });
+        }
+
+        window.addEventListener('beforeunload', () => {
+            Object.keys(MEDIA_ELEMENTS).forEach(mediaType => {
+                const player = document.getElementById(MEDIA_ELEMENTS[mediaType].elementId);
+                if (player && player.src) {
+                    URL.revokeObjectURL(player.src);
+                }
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initIndexedDB();
+            setupFileListeners();
+            setupAudioListeners();
+        });
+    </script>
+</body>
+</html>
