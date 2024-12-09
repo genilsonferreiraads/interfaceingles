@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sincronizador de Texto para Aprendizado de Inglês</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f7f6;
+        }
+        .custom-shadow {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .sentence {
+            transition: all 0.3s ease;
+        }
+        .sentence:hover {
+            background-color: rgba(33, 150, 243, 0.1);
+        }
+        .sentence.active {
+            background-color: #fff176;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <div class="bg-white rounded-xl shadow-lg p-6">
+            <h1 class="text-3xl font-bold text-center text-blue-600 mb-6">
+                Sincronizador de Texto para Aprendizado
+            </h1>
+            
+            <div class="flex flex-col md:flex-row gap-4 items-center mb-4">
+                <div class="flex-grow w-full">
+                    <input 
+                        type="file" 
+                        id="audioFile" 
+                        accept="audio/*"
+                        class="w-full text-sm text-gray-500 
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100"
+                    >
+                </div>
+                
+                <audio id="player" controls class="w-full"></audio>
+                
+                <div class="flex items-center space-x-2">
+                    <button 
+                        onclick="sincronizarAudioTexto()"
+                        class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                    >
+                        Sincronizar
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center space-x-2">
+                    <input 
+                        type="checkbox" 
+                        id="autoRepeat" 
+                        class="form-checkbox text-blue-500"
+                    >
+                    <label for="autoRepeat" class="text-gray-700">
+                        Repetição Automática
+                    </label>
+                </div>
+                
+                <span 
+                    id="viewCountDisplay" 
+                    class="text-gray-600 font-semibold"
+                >
+                    Visualizações: 0
+                </span>
+            </div>
+
+            <div id="statusMessage" class="bg-gray-100 text-gray-700 p-3 rounded-lg mb-4 text-center"></div>
+
+            <div class="mb-4">
+                <h3 class="text-xl font-semibold text-blue-600 mb-2">
+                    Digite o Texto
+                </h3>
+                <textarea 
+                    id="textInput" 
+                    placeholder="Digite o texto aqui..." 
+                    class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none min-h-[150px]"
+                ></textarea>
+                <button 
+                    onclick="processarTexto()"
+                    class="mt-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
+                >
+                    Processar Texto
+                </button>
+            </div>
+
+            <div 
+                id="textDisplay" 
+                class="bg-white border border-gray-200 p-4 rounded-lg text-lg leading-relaxed"
+            ></div>
+        </div>
+    </div>
+
+    <script>
+        // Variáveis globais
+let sentencas = [];
+let contextoAudio = null;
+let bufferAudio = null;
+let licaoAtual = null;
+let arquivoAudioAtual = null;
+let bd = null;
+let ultimoHashAudio = null;
+
+// Elementos do DOM
+const reprodutor = document.getElementById('player');
+const exibicaoTexto = document.getElementById('textDisplay');
+const mensagemStatus = document.getElementById('statusMessage');
+const entradaArquivoAudio = document.getElementById('audioFile');
+const checkboxRepeticaoAuto = document.getElementById('autoRepeat');
+const exibicaoContagemVisualizacoes = document.getElementById('viewCountDisplay');
+const entradaTexto = document.getElementById('textInput');
+
+// Debug logging
+function debugLog(mensagem, dados = null) {
+    console.log(`[AUDIO SYNC DEBUG] ${mensagem}`);
+    if (dados) console.log(dados);
+}
+
+// Função de hash para criar identificador único
+async function gerarHash(str, arquivo = null) {
+    const codificador = new TextEncoder();
+    const dados = arquivo 
+        ? codificador.encode(str + arquivo.name + arquivo.type + arquivo.lastModified)
+        : codificador.encode(str);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dados);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Inicialização do IndexedDB
+function inicializarIndexedDB() {
+    return new Promise((resolver, rejeitar) => {
+        const solicitacao = indexedDB.open('BancoDadosAprendizadoIngles', 7);
+
+        solicitacao.onupgradeneeded = function(evento) {
+            const bd = evento.target.result;
+            if (!bd.objectStoreNames.contains('licoes')) {
+                bd.createObjectStore('licoes', { keyPath: 'id' });
+            }
+            if (!bd.objectStoreNames.contains('arquivosAudio')) {
+                bd.createObjectStore('arquivosAudio', { keyPath: 'idLicao' });
+            }
+            if (!bd.objectStoreNames.contains('configuracoes')) {
+                bd.createObjectStore('configuracoes', { keyPath: 'chave' });
+            }
+        };
+
+        solicitacao.onsuccess = async function(evento) {
+            bd = evento.target.result;
+            debugLog('IndexedDB inicializado com sucesso');
+            
+            // Carregar última lição
+            await carregarUltimaLicao();
+            
+            // Carregar último áudio salvo
+            await carregarUltimoAudioSalvo();
+            
+            resolver(bd);
+        };
+
+        solicitacao.onerror = function(evento) {
+            debugLog('Erro no IndexedDB', evento.target.error);
+            rejeitar('Erro no IndexedDB: ' + evento.target.error);
+        };
+    });
+}
+
+// Salvar última referência de áudio
+async function salvarReferenciaUltimoAudio(hashLicao) {
+    if (!bd) return;
+
+    const transacao = bd.transaction(['configuracoes'], 'readwrite');
+    const repositorio = transacao.objectStore('configuracoes');
+
+    const solicitacao = repositorio.put({
+        chave: 'ultimoHashAudio',
+        valor: hashLicao
+    });
+}
+
+// Recuperar última referência de áudio
+async function recuperarReferenciaUltimoAudio() {
+    return new Promise((resolver, rejeitar) => {
+        if (!bd) {
+            rejeitar('Banco de dados não inicializado');
+            return;
+        }
+
+        const transacao = bd.transaction(['configuracoes'], 'readonly');
+        const repositorio = transacao.objectStore('configuracoes');
+        const solicitacao = repositorio.get('ultimoHashAudio');
+
+        solicitacao.onsuccess = function(evento) {
+            const resultado = evento.target.result;
+            resolver(resultado ? resultado.valor : null);
+        };
+
+        solicitacao.onerror = function() {
+            rejeitar(null);
+        };
+    });
+}
+
+// Carregar último áudio salvo
+async function carregarUltimoAudioSalvo() {
+    try {
+        const hashUltimoAudio = await recuperarReferenciaUltimoAudio();
+        
+        if (hashUltimoAudio) {
+            const arquivoAudio = await carregarArquivoAudioDoIndexedDB(hashUltimoAudio);
+            
+            if (arquivoAudio) {
+                arquivoAudioAtual = arquivoAudio;
+                reprodutor.src = URL.createObjectURL(arquivoAudio);
+                
+                // Recuperar bufferAudio
+                contextoAudio = new (window.AudioContext || window.webkitAudioContext)();
+                const bufferArray = await arquivoAudio.arrayBuffer();
+                bufferAudio = await contextoAudio.decodeAudioData(bufferArray);
+                
+                // Restaurar arquivo no input
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(arquivoAudio);
+                entradaArquivoAudio.files = dataTransfer.files;
+                
+                // ADICIONE ESTA LINHA
+                await atualizarContagemVisualizacoes();
+                
+                debugLog('Último áudio recuperado com sucesso');
+            }
+        }
+    } catch (erro) {
+        debugLog('Erro ao carregar último áudio', erro);
+    }
+}
+
+// Modificar evento de entrada de arquivo
+entradaArquivoAudio.addEventListener('change', async (e) => {
+    const arquivo = e.target.files[0];
+    arquivoAudioAtual = arquivo;
+    reprodutor.src = URL.createObjectURL(arquivo);
+    
+    try {
+        contextoAudio = new (window.AudioContext || window.webkitAudioContext)();
+        const bufferArray = await arquivo.arrayBuffer();
+        bufferAudio = await contextoAudio.decodeAudioData(bufferArray);
+        
+        // Gerar hash para identificação única
+        const hashAudio = await gerarHash(arquivo.name);
+        
+        // Salvar arquivo de áudio
+        await salvarArquivoAudioNoIndexedDB(arquivo, hashAudio);
+        
+        // Salvar referência do último áudio
+        await salvarReferenciaUltimoAudio(hashAudio);
+        
+        // Reiniciar a contagem de visualizações para este novo áudio
+        await reiniciarContagemVisualizacoes(hashAudio);
+        
+        mensagemStatus.textContent = 'Arquivo de áudio carregado e salvo com sucesso!';
+    } catch (erro) {
+        mensagemStatus.textContent = 'Erro ao carregar arquivo de áudio: ' + erro.message;
+    }
+});
+
+// Salvar arquivo de áudio como blob no IndexedDB
+async function salvarArquivoAudioNoIndexedDB(arquivo, idLicao) {
+    return new Promise((resolver, rejeitar) => {
+        if (!arquivo || !bd) {
+            debugLog('Arquivo de áudio ou banco de dados não disponível');
+            rejeitar('Dados insuficientes para salvar');
+            return;
+        }
+
+        const transacao = bd.transaction(['arquivosAudio'], 'readwrite');
+        const repositorio = transacao.objectStore('arquivosAudio');
+
+        const dadosArquivo = {
+            idLicao: idLicao,
+            nome: arquivo.name,
+            tipo: arquivo.type,
+            tamanho: arquivo.size,
+            ultimaModificacao: arquivo.lastModified,
+            blob: arquivo,
+            contagemVisualizacoes: 0
+        };
+
+        const solicitacao = repositorio.put(dadosArquivo);
+
+        solicitacao.onsuccess = function() {
+            debugLog('Arquivo de áudio salvo no IndexedDB', dadosArquivo);
+            resolver(dadosArquivo);
+        };
+
+        solicitacao.onerror = function(evento) {
+            debugLog('Erro ao salvar arquivo de áudio', evento.target.error);
+            rejeitar(evento.target.error);
+        };
+    });
+}
+
+// Carregar arquivo de áudio do IndexedDB
+async function carregarArquivoAudioDoIndexedDB(idLicao) {
+    return new Promise((resolver, rejeitar) => {
+        if (!bd) {
+            debugLog('Banco de dados não inicializado');
+            rejeitar('Banco de dados não inicializado');
+            return;
+        }
+
+        const transacao = bd.transaction(['arquivosAudio'], 'readonly');
+        const repositorio = transacao.objectStore('arquivosAudio');
+        const solicitacao = repositorio.get(idLicao);
+
+        solicitacao.onsuccess = function(evento) {
+            const arquivoSalvo = evento.target.result;
+            if (arquivoSalvo) {
+                debugLog('Arquivo de áudio recuperado do IndexedDB', arquivoSalvo);
+                resolver(arquivoSalvo.blob);
+            } else {
+                debugLog('Nenhum arquivo de áudio encontrado para este ID');
+                resolver(null);
+            }
+        };
+
+        solicitacao.onerror = function(evento) {
+            debugLog('Erro ao carregar arquivo de áudio', evento.target.error);
+            rejeitar(evento.target.error);
+        };
+    });
+}
+
+// Salvar lição no IndexedDB
+async function salvarLicaoNoIndexedDB() {
+    if (!bd) await inicializarIndexedDB();
+
+    const texto = entradaTexto.value.trim();
+    if (!texto) {
+        debugLog('Texto vazio, mas continuando salvamento');
+    }
+
+    // Gerar hash considerando texto ou áudio
+    const hashLicao = await gerarHash(texto || 'sem_texto', arquivoAudioAtual);
+
+    const licao = {
+        id: hashLicao,
+        texto: texto,
+        sentencas: sentencas.length > 0 ? sentencas : [],
+        repeticaoAuto: checkboxRepeticaoAuto.checked,
+        criadoEm: new Date().toISOString()
+    };
+
+    const transacao = bd.transaction(['licoes'], 'readwrite');
+    const repositorio = transacao.objectStore('licoes');
+
+    const solicitacaoSalvar = repositorio.put(licao);
+
+    solicitacaoSalvar.onsuccess = async function() {
+        licaoAtual = licao;
+        debugLog('Lição salva com sucesso', licao);
+
+        if (arquivoAudioAtual) {
+            try {
+                await salvarArquivoAudioNoIndexedDB(arquivoAudioAtual, hashLicao);
+            } catch (erro) {
+                debugLog('Erro ao salvar arquivo de áudio', erro);
+            }
+        }
+
+        mensagemStatus.textContent = 'Lição salva com sucesso!';
+    };
+
+    solicitacaoSalvar.onerror = function() {
+        debugLog('Erro ao salvar lição');
+        mensagemStatus.textContent = 'Erro ao salvar lição';
+    };
+}
+
+// Carregar última lição
+async function carregarUltimaLicao() {
+    if (!bd) return;
+
+    const transacao = bd.transaction(['licoes'], 'readonly');
+    const repositorio = transacao.objectStore('licoes');
+    const solicitacao = repositorio.openCursor(null, 'prev');
+
+    solicitacao.onsuccess = async function(evento) {
+        const cursor = evento.target.result;
+        if (cursor) {
+            const licao = cursor.value;
+            licaoAtual = licao;
+            
+            debugLog('Última lição carregada', licao);
+
+            if (licao.texto) {
+                entradaTexto.value = licao.texto;
+            }
+            
+            if (licao.sentencas) {
+                sentencas = licao.sentencas;
+                renderizarTexto();
+            }
+            
+            checkboxRepeticaoAuto.checked = licao.repeticaoAuto || false;
+            
+            // Carregar contagem de visualizações do áudio
+            await atualizarContagemVisualizacoes();
+        }
+    };
+}
+
+// Reiniciar contagem de visualizações para um áudio específico
+async function reiniciarContagemVisualizacoes(hashAudio) {
+    return new Promise((resolver, rejeitar) => {
+        if (!bd) {
+            rejeitar('Banco de dados não inicializado');
+            return;
+        }
+
+        const transacao = bd.transaction(['arquivosAudio'], 'readwrite');
+        const repositorio = transacao.objectStore('arquivosAudio');
+        const solicitacao = repositorio.get(hashAudio);
+
+        solicitacao.onsuccess = function(evento) {
+            const arquivoSalvo = evento.target.result;
+            if (arquivoSalvo) {
+                arquivoSalvo.contagemVisualizacoes = 0;
+                repositorio.put(arquivoSalvo);
+                exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+                resolver();
+            } else {
+                rejeitar('Arquivo de áudio não encontrado');
+            }
+        };
+
+        solicitacao.onerror = function() {
+            rejeitar('Erro ao recuperar arquivo de áudio');
+        };
+    });
+}
+
+// Atualizar contagem de visualizações
+async function atualizarContagemVisualizacoes() {
+    if (!bd || !arquivoAudioAtual) {
+        exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+        return;
+    }
+
+    return new Promise((resolver, rejeitar) => {
+        const transacao = bd.transaction(['arquivosAudio'], 'readonly');
+        const repositorio = transacao.objectStore('arquivosAudio');
+        const hashAudio = gerarHash(arquivoAudioAtual.name);
+
+        const solicitacao = repositorio.get(hashAudio);
+
+        solicitacao.onsuccess = function(evento) {
+            const arquivoSalvo = evento.target.result;
+            if (arquivoSalvo) {
+                const contagem = arquivoSalvo.contagemVisualizacoes || 0;
+                exibicaoContagemVisualizacoes.textContent = 
+                    `Visualizações: ${contagem}`;
+                resolver(contagem);
+            } else {
+                exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+                resolver(0);
+            }
+        };
+
+        solicitacao.onerror = function() {
+            exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+            rejeitar('Erro ao recuperar contagem de visualizações');
+        };
+    });
+}
+
+// Incrementar contagem de visualizações
+async function incrementarContagemVisualizacoes() {
+    if (!bd || !arquivoAudioAtual) return;
+
+    return new Promise((resolver, rejeitar) => {
+        const transacao = bd.transaction(['arquivosAudio'], 'readwrite');
+        const repositorio = transacao.objectStore('arquivosAudio');
+        
+        const solicitacaoHash = gerarHash(arquivoAudioAtual.name);
+
+        const solicitacao = repositorio.get(solicitacaoHash);
+
+        solicitacao.onsuccess = function(evento) {
+            const arquivoSalvo = evento.target.result;
+            if (arquivoSalvo) {
+                arquivoSalvo.contagemVisualizacoes = 
+                    (arquivoSalvo.contagemVisualizacoes || 0) + 1;
+                
+                const solicitacaoUpdate = repositorio.put(arquivoSalvo);
+                
+                solicitacaoUpdate.onsuccess = function() {
+                    exibicaoContagemVisualizacoes.textContent = 
+                        `Visualizações: ${arquivoSalvo.contagemVisualizacoes}`;
+                    resolver(arquivoSalvo.contagemVisualizacoes);
+                };
+            }
+        };
+    });
+}
+
+// Processar texto
+async function processarTexto() {
+    const texto = entradaTexto.value;
+    if (!texto.trim()) {
+        mensagemStatus.textContent = 'Por favor, insira um texto.';
+        return;
+    }
+
+    sentencas = texto.split(/[.!?]+/)
+        .filter(s => s.trim())
+        .map(s => ({
+            texto: s.trim(),
+            palavras: s.trim().split(/\s+/),
+            tempoInicio: null,
+            tempoFim: null
+        }));
+    
+    renderizarTexto();
+    await salvarLicaoNoIndexedDB();
+}
+
+// Sincronizar áudio e texto
+async function sincronizarAudioTexto() {
+    // Verificar se o áudio está disponível de diferentes formas
+    if (!bufferAudio && !arquivoAudioAtual && !reprodutor.src) {
+        mensagemStatus.textContent = 'Por favor, carregue um arquivo de áudio primeiro.';
+        return;
+    }
+
+    // Se bufferAudio não estiver definido, tentar decodificar novamente
+    if (!bufferAudio && arquivoAudioAtual) {
+        try {
+            contextoAudio = new (window.AudioContext || window.webkitAudioContext)();
+            const bufferArray = await arquivoAudioAtual.arrayBuffer();
+            bufferAudio = await contextoAudio.decodeAudioData(bufferArray);
+        } catch (erro) {
+            mensagemStatus.textContent = 'Erro ao processar arquivo de áudio.';
+            return;
+        }
+    }
+
+    const totalPalavras = sentencas.reduce((soma, sentenca) => 
+        soma + sentenca.palavras.length, 0);
+    const mediaPalavrasPorSegundo = 2.5;
+
+    let tempoAtual = 0;
+    sentencas.forEach((sentenca) => {
+        const qtdPalavrasSentenca = sentenca.palavras.length;
+        const duracaoEstimadaSentenca = qtdPalavrasSentenca / mediaPalavrasPorSegundo;
+        
+        const variacaoNatural = Math.random() * 0.5;
+        
+        sentenca.tempoInicio = tempoAtual;
+        sentenca.tempoFim = tempoAtual + duracaoEstimadaSentenca + variacaoNatural;
+        
+        tempoAtual = sentenca.tempoFim;
+    });
+
+    await salvarLicaoNoIndexedDB();
+
+    renderizarTexto();
+    mensagemStatus.textContent = 'Sincronização Concluída!';
+}
+
+// Renderizar texto
+function renderizarTexto() {
+    exibicaoTexto.innerHTML = sentencas.map((s, i) => 
+        `<span class="sentence" data-index="${i}">${s.texto}</span>`
+    ).join(' ');
+}
+
+// Evento de atualização de tempo para destacar
+reprodutor.addEventListener('timeupdate', () => {
+    const tempoAtual = reprodutor.currentTime;
+    
+    sentencas.forEach((sentenca, indice) => {
+        const elementoSentenca = document.querySelector(
+            `.sentence[data-index="${indice}"]`
+        );
+        
+        if (sentenca.tempoInicio !== null && 
+            tempoAtual >= sentenca.tempoInicio && 
+            tempoAtual <= sentenca.tempoFim) {
+            elementoSentenca.classList.add('active');
+        } else {
+            elementoSentenca.classList.remove('active');
+        }
+    });
+});
+
+// Função para salvar a contagem no IndexedDB
+function salvarContagemVisualizacoes(audioId, contagem) {
+    const transacao = bd.transaction('arquivosAudio', 'readwrite');
+    const repositorio = transacao.objectStore('arquivosAudio');
+    const solicitacao = repositorio.get(audioId);
+
+    solicitacao.onsuccess = function (evento) {
+        const arquivo = evento.target.result || { idLicao: audioId, contagemVisualizacoes: 0 };
+        arquivo.contagemVisualizacoes = contagem;
+        repositorio.put(arquivo);
+    };
+}
+
+// Função para recuperar contagem do IndexedDB
+function obterContagemVisualizacoes(audioId, callback) {
+    const transacao = bd.transaction('arquivosAudio', 'readonly');
+    const repositorio = transacao.objectStore('arquivosAudio');
+    const solicitacao = repositorio.get(audioId);
+
+    solicitacao.onsuccess = function (evento) {
+        const arquivo = evento.target.result;
+        callback(arquivo ? arquivo.contagemVisualizacoes : 0);
+    };
+}
+
+// Incrementar contagem ao finalizar áudio
+reprodutor.addEventListener('ended', () => {
+    if (!arquivoAudioAtual) return;
+    const audioId = btoa(arquivoAudioAtual.name + arquivoAudioAtual.size + arquivoAudioAtual.lastModified);
+
+    obterContagemVisualizacoes(audioId, (contagem) => {
+        contagem++;
+        salvarContagemVisualizacoes(audioId, contagem);
+        exibicaoContagemVisualizacoes.textContent = `Visualizações: ${contagem}`;
+    });
+
+    if (checkboxRepeticaoAuto.checked) {
+        reprodutor.play();
+    }
+});
+
+// Repetição automática e contagem de visualizações
+reprodutor.addEventListener('ended', () => {
+    if (checkboxRepeticaoAuto.checked) {
+        incrementarContagemVisualizacoes();
+        reprodutor.currentTime = 0;
+        reprodutor.play();
+    }
+});
+
+// Clique na sentença para reproduzir
+exibicaoTexto.addEventListener('click', (e) => {
+    const elementoSentenca = e.target.closest('.sentence');
+    if (elementoSentenca) {
+        const indice = parseInt(elementoSentenca.dataset.index);
+        if (sentencas[indice].tempoInicio !== null) {
+            reprodutor.currentTime = sentencas[indice].tempoInicio;
+            reprodutor.play();
+        }
+    }
+});
+
+// Salvar estado quando a página for fechada
+window.addEventListener('beforeunload', () => {
+    if (licaoAtual) {
+        salvarLicaoNoIndexedDB();
+    }
+});
+
+// Inicializar na carga da página
+document.addEventListener('DOMContentLoaded', () => {
+    inicializarIndexedDB();
+});
+    </script>
+</body>
+</html>
