@@ -22,13 +22,22 @@
             background-color: #fff176;
             font-weight: bold;
         }
+        /* Transição suave para elementos */
+        .fade-enter-active, .fade-leave-active {
+            transition: opacity 0.3s ease;
+        }
+        .fade-enter, .fade-leave-to {
+            opacity: 0;
+        }
+		
+		
     </style>
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8 max-w-4xl">
         <div class="bg-white rounded-xl shadow-lg p-6">
             <h1 class="text-3xl font-bold text-center text-blue-600 mb-6">
-                Sincronizador de Texto para Aprendizado
+                Exercício Texto com Áudio
             </h1>
             
             <div class="flex flex-col md:flex-row gap-4 items-center mb-4">
@@ -80,30 +89,50 @@
 
             <div id="statusMessage" class="bg-gray-100 text-gray-700 p-3 rounded-lg mb-4 text-center"></div>
 
-            <div class="mb-4">
-                <h3 class="text-xl font-semibold text-blue-600 mb-2">
-                    Digite o Texto
-                </h3>
-                <textarea 
-                    id="textInput" 
-                    placeholder="Digite o texto aqui..." 
-                    class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none min-h-[150px]"
-                ></textarea>
-                <button 
-                    onclick="processarTexto()"
-                    class="mt-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
-                >
-                    Processar Texto
-                </button>
-            </div>
+            <!-- Container para entrada de texto e texto processado -->
+            <div id="textContainer">
+                <!-- Área de entrada de texto -->
+                <div id="textInputSection">
+                    <h3 class="text-xl font-semibold text-blue-600 mb-2">
+                        Digite o Texto
+                    </h3>
+                    <textarea 
+                        id="textInput" 
+                        placeholder="Digite o texto aqui..." 
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none min-h-[150px]"
+                    ></textarea>
+                    <button 
+                        onclick="processarTexto()"
+                        class="mt-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
+                    >
+                        Salvar Texto
+                    </button>
+                </div>
 
-            <div 
-                id="textDisplay" 
-                class="bg-white border border-gray-200 p-4 rounded-lg text-lg leading-relaxed"
-            ></div>
+                <!-- Área de texto processado -->
+                <div id="textProcessedSection" class="hidden">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-semibold text-blue-600">
+                            Texto Processado
+                        </h3>
+                        <button 
+                            onclick="editarTexto()"
+                            class="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 transition-colors"
+                        >
+                            Editar Texto
+                        </button>
+                    </div>
+                    
+                    <div 
+                        id="textDisplay" 
+                        class="bg-white border border-gray-200 p-4 rounded-lg text-lg leading-relaxed"
+                    ></div>
+                </div>
+            </div>
         </div>
     </div>
 
+   
     <script>
         // Variáveis globais
 let sentencas = [];
@@ -122,6 +151,8 @@ const entradaArquivoAudio = document.getElementById('audioFile');
 const checkboxRepeticaoAuto = document.getElementById('autoRepeat');
 const exibicaoContagemVisualizacoes = document.getElementById('viewCountDisplay');
 const entradaTexto = document.getElementById('textInput');
+const secaoEntradaTexto = document.getElementById('textInputSection');
+const secaoTextoProcessado = document.getElementById('textProcessedSection');
 
 // Debug logging
 function debugLog(mensagem, dados = null) {
@@ -140,8 +171,37 @@ async function gerarHash(str, arquivo = null) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Função para mostrar seção de entrada de texto
+function mostrarEntradaTexto() {
+    secaoEntradaTexto.classList.remove('hidden');
+    secaoTextoProcessado.classList.add('hidden');
+    exibicaoTexto.innerHTML = '';
+    sentencas = [];
+}
+
+// Função para mostrar texto processado
+function mostrarTextoProcessado() {
+    secaoEntradaTexto.classList.add('hidden');
+    secaoTextoProcessado.classList.remove('hidden');
+}
+
+// Função para editar texto
+function editarTexto() {
+    // Se houver texto processado, recupera para edição
+    if (sentencas.length > 0) {
+        entradaTexto.value = sentencas.map(s => s.texto).join('. ');
+    }
+    
+    // Método 1: Definir altura diretamente via style
+    entradaTexto.style.minHeight = '200px';
+    
+    
+    
+    mostrarEntradaTexto();
+}
+
 // Inicialização do IndexedDB
-function inicializarIndexedDB() {
+async function inicializarIndexedDB() {
     return new Promise((resolver, rejeitar) => {
         const solicitacao = indexedDB.open('BancoDadosAprendizadoIngles', 7);
 
@@ -162,13 +222,17 @@ function inicializarIndexedDB() {
             bd = evento.target.result;
             debugLog('IndexedDB inicializado com sucesso');
             
-            // Carregar última lição
-            await carregarUltimaLicao();
-            
-            // Carregar último áudio salvo
-            await carregarUltimoAudioSalvo();
-            
-            resolver(bd);
+            try {
+                // Carregar último áudio primeiro (que já inclui a contagem)
+                await carregarUltimoAudioSalvo();
+                // Depois carregar a última lição
+                await carregarUltimaLicao();
+                
+                resolver(bd);
+            } catch (erro) {
+                debugLog('Erro durante a inicialização', erro);
+                rejeitar(erro);
+            }
         };
 
         solicitacao.onerror = function(evento) {
@@ -176,75 +240,6 @@ function inicializarIndexedDB() {
             rejeitar('Erro no IndexedDB: ' + evento.target.error);
         };
     });
-}
-
-// Salvar última referência de áudio
-async function salvarReferenciaUltimoAudio(hashLicao) {
-    if (!bd) return;
-
-    const transacao = bd.transaction(['configuracoes'], 'readwrite');
-    const repositorio = transacao.objectStore('configuracoes');
-
-    const solicitacao = repositorio.put({
-        chave: 'ultimoHashAudio',
-        valor: hashLicao
-    });
-}
-
-// Recuperar última referência de áudio
-async function recuperarReferenciaUltimoAudio() {
-    return new Promise((resolver, rejeitar) => {
-        if (!bd) {
-            rejeitar('Banco de dados não inicializado');
-            return;
-        }
-
-        const transacao = bd.transaction(['configuracoes'], 'readonly');
-        const repositorio = transacao.objectStore('configuracoes');
-        const solicitacao = repositorio.get('ultimoHashAudio');
-
-        solicitacao.onsuccess = function(evento) {
-            const resultado = evento.target.result;
-            resolver(resultado ? resultado.valor : null);
-        };
-
-        solicitacao.onerror = function() {
-            rejeitar(null);
-        };
-    });
-}
-
-// Carregar último áudio salvo
-async function carregarUltimoAudioSalvo() {
-    try {
-        const hashUltimoAudio = await recuperarReferenciaUltimoAudio();
-        
-        if (hashUltimoAudio) {
-            const arquivoAudio = await carregarArquivoAudioDoIndexedDB(hashUltimoAudio);
-            
-            if (arquivoAudio) {
-                arquivoAudioAtual = arquivoAudio;
-                reprodutor.src = URL.createObjectURL(arquivoAudio);
-                
-                // Recuperar bufferAudio
-                contextoAudio = new (window.AudioContext || window.webkitAudioContext)();
-                const bufferArray = await arquivoAudio.arrayBuffer();
-                bufferAudio = await contextoAudio.decodeAudioData(bufferArray);
-                
-                // Restaurar arquivo no input
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(arquivoAudio);
-                entradaArquivoAudio.files = dataTransfer.files;
-                
-                // ADICIONE ESTA LINHA
-                await atualizarContagemVisualizacoes();
-                
-                debugLog('Último áudio recuperado com sucesso');
-            }
-        }
-    } catch (erro) {
-        debugLog('Erro ao carregar último áudio', erro);
-    }
 }
 
 // Modificar evento de entrada de arquivo
@@ -276,71 +271,26 @@ entradaArquivoAudio.addEventListener('change', async (e) => {
     }
 });
 
-// Salvar arquivo de áudio como blob no IndexedDB
-async function salvarArquivoAudioNoIndexedDB(arquivo, idLicao) {
-    return new Promise((resolver, rejeitar) => {
-        if (!arquivo || !bd) {
-            debugLog('Arquivo de áudio ou banco de dados não disponível');
-            rejeitar('Dados insuficientes para salvar');
-            return;
-        }
+// Processar texto
+async function processarTexto() {
+    const texto = entradaTexto.value;
+    if (!texto.trim()) {
+        mensagemStatus.textContent = 'Por favor, insira um texto.';
+        return;
+    }
 
-        const transacao = bd.transaction(['arquivosAudio'], 'readwrite');
-        const repositorio = transacao.objectStore('arquivosAudio');
-
-        const dadosArquivo = {
-            idLicao: idLicao,
-            nome: arquivo.name,
-            tipo: arquivo.type,
-            tamanho: arquivo.size,
-            ultimaModificacao: arquivo.lastModified,
-            blob: arquivo,
-            contagemVisualizacoes: 0
-        };
-
-        const solicitacao = repositorio.put(dadosArquivo);
-
-        solicitacao.onsuccess = function() {
-            debugLog('Arquivo de áudio salvo no IndexedDB', dadosArquivo);
-            resolver(dadosArquivo);
-        };
-
-        solicitacao.onerror = function(evento) {
-            debugLog('Erro ao salvar arquivo de áudio', evento.target.error);
-            rejeitar(evento.target.error);
-        };
-    });
-}
-
-// Carregar arquivo de áudio do IndexedDB
-async function carregarArquivoAudioDoIndexedDB(idLicao) {
-    return new Promise((resolver, rejeitar) => {
-        if (!bd) {
-            debugLog('Banco de dados não inicializado');
-            rejeitar('Banco de dados não inicializado');
-            return;
-        }
-
-        const transacao = bd.transaction(['arquivosAudio'], 'readonly');
-        const repositorio = transacao.objectStore('arquivosAudio');
-        const solicitacao = repositorio.get(idLicao);
-
-        solicitacao.onsuccess = function(evento) {
-            const arquivoSalvo = evento.target.result;
-            if (arquivoSalvo) {
-                debugLog('Arquivo de áudio recuperado do IndexedDB', arquivoSalvo);
-                resolver(arquivoSalvo.blob);
-            } else {
-                debugLog('Nenhum arquivo de áudio encontrado para este ID');
-                resolver(null);
-            }
-        };
-
-        solicitacao.onerror = function(evento) {
-            debugLog('Erro ao carregar arquivo de áudio', evento.target.error);
-            rejeitar(evento.target.error);
-        };
-    });
+    sentencas = texto.split(/[.!?]+/)
+        .filter(s => s.trim())
+        .map(s => ({
+            texto: s.trim(),
+            palavras: s.trim().split(/\s+/),
+            tempoInicio: null,
+            tempoFim: null
+        }));
+    
+    renderizarTexto();
+    mostrarTextoProcessado();
+    await salvarLicaoNoIndexedDB(); 
 }
 
 // Salvar lição no IndexedDB
@@ -405,21 +355,113 @@ async function carregarUltimaLicao() {
             
             debugLog('Última lição carregada', licao);
 
+            // Sempre tentar recuperar o texto
             if (licao.texto) {
                 entradaTexto.value = licao.texto;
+                
+                // Verificar se há sentenças para processar
+                if (licao.sentencas && licao.sentencas.length > 0) {
+                    // Popular as sentenças
+                    sentencas = licao.sentencas;
+                    
+                    // Renderizar texto processado
+                    renderizarTexto();
+                    
+                    // Mostrar seção de texto processado
+                    secaoEntradaTexto.classList.add('hidden');
+                    secaoTextoProcessado.classList.remove('hidden');
+                }
             }
             
-            if (licao.sentencas) {
-                sentencas = licao.sentencas;
-                renderizarTexto();
-            }
-            
+            // Restaurar configuração de repetição automática
             checkboxRepeticaoAuto.checked = licao.repeticaoAuto || false;
             
             // Carregar contagem de visualizações do áudio
             await atualizarContagemVisualizacoes();
         }
     };
+}
+
+// Salvar arquivo de áudio como blob no IndexedDB
+async function salvarArquivoAudioNoIndexedDB(arquivo, idLicao) {
+    return new Promise((resolver, rejeitar) => {
+        if (!arquivo || !bd) {
+            debugLog('Arquivo de áudio ou banco de dados não disponível');
+            rejeitar('Dados insuficientes para salvar');
+            return;
+        }
+
+        const transacao = bd.transaction(['arquivosAudio'], 'readwrite');
+        const repositorio = transacao.objectStore('arquivosAudio');
+
+        const dadosArquivo = {
+            idLicao: idLicao,
+            nome: arquivo.name,
+            tipo: arquivo.type,
+            tamanho: arquivo.size,
+            ultimaModificacao: arquivo.lastModified,
+            blob: arquivo,
+            contagemVisualizacoes: 0
+        };
+
+        const solicitacao = repositorio.put(dadosArquivo);
+
+        solicitacao.onsuccess = function() {
+            debugLog('Arquivo de áudio salvo no IndexedDB', dadosArquivo);
+            resolver(dadosArquivo);
+        };
+
+        solicitacao.onerror = function(evento) {
+            debugLog('Erro ao salvar arquivo de áudio', evento.target.error);
+            rejeitar(evento.target.error);
+        };
+    });
+}
+
+// Função para recuperar contagem de visualizações inicial
+async function recuperarContagemVisualizacoesInicial() {
+    if (!bd) {
+        console.log('Banco de dados não inicializado ainda');
+        return;
+    }
+
+    try {
+        // Recupera a referência do último áudio
+        const hashUltimoAudio = await recuperarReferenciaUltimoAudio();
+        
+        if (hashUltimoAudio) {
+            const transacao = bd.transaction(['arquivosAudio'], 'readonly');
+            const repositorio = transacao.objectStore('arquivosAudio');
+            const solicitacao = repositorio.get(hashUltimoAudio);
+
+            return new Promise((resolver, rejeitar) => {
+                solicitacao.onsuccess = function(evento) {
+                    const arquivoSalvo = evento.target.result;
+                    if (arquivoSalvo) {
+                        const contagem = arquivoSalvo.contagemVisualizacoes || 0;
+                        exibicaoContagemVisualizacoes.textContent = `Visualizações: ${contagem}`;
+                        resolver(contagem);
+                    } else {
+                        exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+                        resolver(0);
+                    }
+                };
+
+                solicitacao.onerror = function(erro) {
+                    console.error('Erro ao recuperar contagem inicial:', erro);
+                    exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+                    rejeitar(erro);
+                };
+            });
+        } else {
+            exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+            return 0;
+        }
+    } catch (erro) {
+        console.error('Erro ao recuperar contagem inicial:', erro);
+        exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+        return 0;
+    }
 }
 
 // Reiniciar contagem de visualizações para um áudio específico
@@ -449,6 +491,154 @@ async function reiniciarContagemVisualizacoes(hashAudio) {
         solicitacao.onerror = function() {
             rejeitar('Erro ao recuperar arquivo de áudio');
         };
+    });
+}
+
+// Carregar último áudio salvo
+async function carregarUltimoAudioSalvo() {
+    try {
+        const hashUltimoAudio = await recuperarReferenciaUltimoAudio();
+        
+        if (hashUltimoAudio) {
+            const transacao = bd.transaction(['arquivosAudio'], 'readonly');
+            const repositorio = transacao.objectStore('arquivosAudio');
+            const solicitacao = repositorio.get(hashUltimoAudio);
+
+            return new Promise((resolver, rejeitar) => {
+                solicitacao.onsuccess = async function(evento) {
+                    const dadosArquivo = evento.target.result;
+                    if (dadosArquivo && dadosArquivo.blob) {
+                        arquivoAudioAtual = dadosArquivo.blob;
+                        reprodutor.src = URL.createObjectURL(dadosArquivo.blob);
+                        
+                        // Recuperar bufferAudio
+                        contextoAudio = new (window.AudioContext || window.webkitAudioContext)();
+                        const bufferArray = await dadosArquivo.blob.arrayBuffer();
+                        bufferAudio = await contextoAudio.decodeAudioData(bufferArray);
+                        
+                        // Restaurar arquivo no input
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(dadosArquivo.blob);
+                        entradaArquivoAudio.files = dataTransfer.files;
+                        
+                        // MODIFICAÇÃO AQUI: Garantir recuperação da contagem de visualizações
+                        const hashAudio = await gerarHash(dadosArquivo.nome);
+                        const contagemVisualizacoes = await recuperarContagemParaHash(hashAudio);
+                        
+                        exibicaoContagemVisualizacoes.textContent = `Visualizações: ${contagemVisualizacoes}`;
+                        
+                        debugLog('Último áudio e contagem recuperados com sucesso');
+                        resolver(dadosArquivo);
+                    } else {
+                        debugLog('Nenhum arquivo de áudio encontrado');
+                        exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+                        resolver(null);
+                    }
+                };
+
+                solicitacao.onerror = function(erro) {
+                    debugLog('Erro ao carregar arquivo de áudio', erro);
+                    rejeitar(erro);
+                };
+            });
+        } else {
+            exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+            return null;
+        }
+    } catch (erro) {
+        debugLog('Erro ao carregar último áudio', erro);
+        exibicaoContagemVisualizacoes.textContent = 'Visualizações: 0';
+        return null;
+    }
+}
+
+// função para recuperar contagem usando o hash
+async function recuperarContagemParaHash(hash) {
+    return new Promise((resolver, rejeitar) => {
+        if (!bd) {
+            resolver(0);
+            return;
+        }
+
+        const transacao = bd.transaction(['arquivosAudio'], 'readonly');
+        const repositorio = transacao.objectStore('arquivosAudio');
+        const solicitacao = repositorio.get(hash);
+
+        solicitacao.onsuccess = function(evento) {
+            const arquivoSalvo = evento.target.result;
+            resolver(arquivoSalvo ? arquivoSalvo.contagemVisualizacoes || 0 : 0);
+        };
+
+        solicitacao.onerror = function() {
+            resolver(0);
+        };
+    });
+}
+
+// Carregar arquivo de áudio do IndexedDB
+async function carregarArquivoAudioDoIndexedDB(idLicao) {
+    return new Promise((resolver, rejeitar) => {
+        if (!bd) {
+            debugLog('Banco de dados não inicializado');
+            rejeitar('Banco de dados não inicializado');
+            return;
+        }
+
+        const transacao = bd.transaction(['arquivosAudio'], 'readonly');
+        const repositorio = transacao.objectStore('arquivosAudio');
+        const solicitacao = repositorio.get(idLicao);
+
+        solicitacao.onsuccess = function(evento) {
+            const arquivoSalvo = evento.target.result;
+            if (arquivoSalvo) {
+                debugLog('Arquivo de áudio recuperado do IndexedDB', arquivoSalvo);
+                resolver(arquivoSalvo.blob);
+            } else {
+                debugLog('Nenhum arquivo de áudio encontrado para este ID');
+                resolver(null);
+            }
+        };
+
+        solicitacao.onerror = function(evento) {
+            debugLog('Erro ao carregar arquivo de áudio', evento.target.error);
+            rejeitar(evento.target.error);
+        };
+    });
+}
+
+// Recuperar última referência de áudio
+async function recuperarReferenciaUltimoAudio() {
+    return new Promise((resolver, rejeitar) => {
+        if (!bd) {
+            rejeitar('Banco de dados não inicializado');
+            return;
+        }
+
+        const transacao = bd.transaction(['configuracoes'], 'readonly');
+        const repositorio = transacao.objectStore('configuracoes');
+        const solicitacao = repositorio.get('ultimoHashAudio');
+
+        solicitacao.onsuccess = function(evento) {
+            const resultado = evento.target.result;
+            resolver(resultado ? resultado.valor : null);
+        };
+
+        solicitacao.onerror = function() {
+            rejeitar(null);
+        };
+    });
+}
+
+// Salvar última referência de áudio
+async function salvarReferenciaUltimoAudio(hashLicao) {
+    if (!bd) return;
+
+    const transacao = bd.transaction(['configuracoes'], 'readwrite');
+    const repositorio = transacao.objectStore('configuracoes');
+
+    const solicitacao = repositorio.put({
+        chave: 'ultimoHashAudio',
+        valor: hashLicao
     });
 }
 
@@ -514,27 +704,6 @@ async function incrementarContagemVisualizacoes() {
             }
         };
     });
-}
-
-// Processar texto
-async function processarTexto() {
-    const texto = entradaTexto.value;
-    if (!texto.trim()) {
-        mensagemStatus.textContent = 'Por favor, insira um texto.';
-        return;
-    }
-
-    sentencas = texto.split(/[.!?]+/)
-        .filter(s => s.trim())
-        .map(s => ({
-            texto: s.trim(),
-            palavras: s.trim().split(/\s+/),
-            tempoInicio: null,
-            tempoFim: null
-        }));
-    
-    renderizarTexto();
-    await salvarLicaoNoIndexedDB();
 }
 
 // Sincronizar áudio e texto
@@ -676,9 +845,13 @@ window.addEventListener('beforeunload', () => {
 });
 
 // Inicializar na carga da página
-document.addEventListener('DOMContentLoaded', () => {
-    inicializarIndexedDB();
+document.addEventListener('DOMContentLoaded', async () => {
+    const entradaTexto = document.getElementById('textInput');
+    entradaTexto.style.minHeight = '200px';
+    await inicializarIndexedDB();
+    await recuperarContagemVisualizacoesInicial();
 });
+    
     </script>
 </body>
 </html>
