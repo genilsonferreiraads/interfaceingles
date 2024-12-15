@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English Learning Interface</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .audio-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background-color: #ffffff;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            z-index: 1000;
+        }
+
+        .main-container {
+            max-width: 800px;
+            margin: 80px auto 20px;
+            padding: 0 15px;
+            position: relative;
+        }
+
+        .text-input-section {
+            margin-top: 80px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        #textInput {
+            width: 100%;
+            height: 400px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 10px;
+            resize: vertical;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .btn:hover {
+            background-color: #2980b9;
+        }
+
+        .format-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        #formattedText {
+            margin-top: 140px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: relative;
+            margin-bottom: 40px;
+        }
+
+        #editTextBtn {
+            position: absolute;
+            top: -27px;
+            right: 1px;
+            padding: 5px;
+        }
+
+        .text-pair {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .text-pair:hover {
+            background-color: #f9f9f9;
+        }
+
+        .text-pair.active {
+            background-color: #f0f0f0;
+        }
+
+        .english {
+            color: #2c3e50;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .portuguese {
+            color: #7f8c8d;
+            font-weight: 300;
+        }
+
+        .audio-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #playCount {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .file-upload {
+            display: none;
+        }
+
+        .video-container {
+            position: fixed;
+            top: 50px;
+            left: 0;
+            width: 50%;
+            padding: 10px;
+            background-color: #f4f7f6;
+            z-index: 900;
+            display: none;
+        }
+
+        #videoPlayer {
+            margin-top: 80px;
+            width: 100%;
+            max-height: 400px;
+        }
+
+        #videoUpload {
+            display: none;
+        }
+
+        .video-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .video-lesson-btn {
+            margin-top: 25px;
+            position: fixed;
+            top: 60px;
+            left: 10px;
+            z-index: 1100;
+        }
+
+        .text-container {
+            transition: all 0.3s ease;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .text-container.with-video {
+            width: 50%;
+            float: right;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="audio-container">
+        <div class="audio-controls">
+		    
+			<input type="file" id="videoUpload" class="file-upload" accept="video/*">
+            <button onclick="document.getElementById('videoUpload').click()" class="btn">
+                Anexar Vídeo
+            </button>
+            <input type="file" id="audioUpload" class="file-upload" accept="audio/*">
+            <button onclick="document.getElementById('audioUpload').click()" class="btn">
+                Anexar Áudio
+            </button>
+
+            <audio id="audioPlayer" controls></audio>
+            <span id="playCount">Reproduções Completas: 0</span>
+
+            <label>
+                <input type="checkbox" id="repeatAudio"> Repetir Áudio
+            </label>
+
+            
+        </div>
+    </div>
+
+    <button class="btn video-lesson-btn" id="toggleVideoBtn">Ver Vídeo Aula</button>
+
+    <div class="video-container" id="videoContainer">
+        <div class="video-controls">
+            <video id="videoPlayer" controls></video>
+        </div>
+    </div>
+
+    <div class="main-container text-container" id="textContainer">
+        <div class="text-input-section" id="textInputSection" style="display: none;">
+            <textarea id="textInput"
+                placeholder="Cole seu texto aqui. Formato: primeira linha em inglês, segunda em português..."></textarea>
+            <div class="format-buttons">
+                <button onclick="formatText()" class="btn">Formatar Texto</button>
+            </div>
+        </div>
+
+        <div id="formattedText">
+            <button class="btn" id="editTextBtn">Editar Texto</button>
+        </div>
+    </div>
+
+    <script>
+	  
+		// Configurações globais
+const DB_NAME = 'EnglishLearningDB';
+const STORE_NAME_TEXT = 'formattedText';
+const STORE_NAME_AUDIO = 'audioData';
+let db;
+let textPairs = [];
+let audioBlob = null;
+let videoBlob = null;
+let currentAudioId = null;
+let textTimings = [];
+let currentPairIndex = 0;
+let audioSyncInterval = null;
+
+// Função para estimar o tempo de leitura de uma frase em segundos
+function estimateReadingTime(text) {
+    const wordsPerMinute = 150;
+    const longWordPenalty = 1.2;
+    const punctuationDelay = 0.3;
+    
+    const words = text.split(/\s+/);
+    const wordCount = words.length;
+    
+    let baseTime = (wordCount / wordsPerMinute) * 60;
+    
+    const longWords = words.filter(word => word.length > 6).length;
+    baseTime += (longWords * longWordPenalty);
+    
+    const punctuationCount = (text.match(/[.,!?;]/g) || []).length;
+    baseTime += (punctuationCount * punctuationDelay);
+    
+    return baseTime;
+}
+
+// Inicialização do IndexedDB
+function initDB() {
+    const request = indexedDB.open(DB_NAME, 1);
+
+    request.onupgradeneeded = function (event) {
+        db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME_TEXT)) {
+            db.createObjectStore(STORE_NAME_TEXT, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORE_NAME_AUDIO)) {
+            db.createObjectStore(STORE_NAME_AUDIO, { keyPath: 'id' });
+        }
+    };
+
+    request.onsuccess = function (event) {
+        db = event.target.result;
+        loadSavedData();
+    };
+
+    request.onerror = function (event) {
+        console.error("Erro ao abrir IndexedDB", event);
+    };
+}
+
+// Gerar ID único para cada áudio
+function generateAudioId(file) {
+    return `audio_${file.name}_${file.size}_${file.lastModified}`;
+}
+
+// Calcular tempos precisos de cada texto no áudio
+function calculateSmartTextTimings() {
+    const audioPlayer = document.getElementById('audioPlayer');
+    const audioDuration = audioPlayer.duration;
+    
+    // Calcula o tempo estimado para cada par de texto
+    const estimatedTimes = textPairs.map(pair => ({
+        english: estimateReadingTime(pair.english),
+        portuguese: estimateReadingTime(pair.portuguese)
+    }));
+    
+    // Soma total dos tempos estimados
+    const totalEstimatedTime = estimatedTimes.reduce((sum, pair) => 
+        sum + pair.english + pair.portuguese, 0);
+    
+    // Fator de ajuste para corresponder à duração real do áudio
+    const adjustmentFactor = audioDuration / totalEstimatedTime;
+    
+    // Calcula os timings finais
+    let currentTime = 0;
+    return textPairs.map((_, index) => {
+        const start = currentTime;
+        const duration = (estimatedTimes[index].english + estimatedTimes[index].portuguese) * adjustmentFactor;
+        currentTime += duration;
+        
+        return {
+            start: start,
+            end: currentTime,
+            duration: duration
+        };
+    });
+}
+
+// Função de sincronização automática
+function startSmartAutoSync() {
+    const audioPlayer = document.getElementById('audioPlayer');
+    
+    // Calcular timings se ainda não calculados
+    if (textTimings.length === 0) {
+        textTimings = calculateSmartTextTimings();
+    }
+    
+    clearInterval(audioSyncInterval);
+    
+    audioSyncInterval = setInterval(() => {
+        const currentTime = audioPlayer.currentTime;
+        
+        // Encontrar o texto atual com base nos timings calculados
+        const activeIndex = textTimings.findIndex(timing => 
+            currentTime >= timing.start && currentTime < timing.end
+        );
+        
+        if (activeIndex !== -1) {
+            // Remover destaque anterior
+            document.querySelectorAll('.text-pair').forEach(pair => {
+                pair.classList.remove('active');
+            });
+            
+            // Destacar texto atual
+            const textPairElements = document.querySelectorAll('.text-pair');
+            const currentPair = textPairElements[activeIndex];
+            currentPair.classList.add('active');
+            
+            // Scroll suave para o texto atual
+            currentPair.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        
+        if (currentTime >= audioPlayer.duration) {
+            clearInterval(audioSyncInterval);
+        }
+    }, 100);
+}
+
+// Salvar áudio no IndexedDB
+function saveAudio(audioBlob, file) {
+    if (!db) return;
+
+    const audioId = generateAudioId(file);
+    currentAudioId = audioId;
+
+    const transaction = db.transaction([STORE_NAME_AUDIO], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME_AUDIO);
+    
+    store.put({
+        id: audioId,
+        blob: audioBlob,
+        timestamp: new Date().getTime(),
+        playCount: 0,
+        repeatAudio: document.getElementById('repeatAudio').checked
+    });
+
+    document.getElementById('playCount').textContent = 'Reproduções Completas: 0';
+}
+
+// Salvar vídeo no IndexedDB
+function saveVideo(videoBlob) {
+    if (!db) return;
+
+    const transaction = db.transaction([STORE_NAME_AUDIO], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME_AUDIO);
+    store.put({
+        id: 'videoFile',
+        blob: videoBlob,
+        timestamp: new Date().getTime()
+    });
+}
+
+// Carregar áudio do IndexedDB
+function loadAudio() {
+    if (!db) return;
+
+    const transaction = db.transaction([STORE_NAME_AUDIO], 'readonly');
+    const store = transaction.objectStore(STORE_NAME_AUDIO);
+    
+    const request = store.openCursor();
+    
+    request.onsuccess = function(event) {
+        const cursor = event.target.result;
+        if (cursor) {
+            const data = cursor.value;
+            if (data.blob && data.id.startsWith('audio_')) {
+                const audioPlayer = document.getElementById('audioPlayer');
+                audioPlayer.src = URL.createObjectURL(data.blob);
+                currentAudioId = data.id;
+                document.getElementById('playCount').textContent = `Reproduções Completas: ${data.playCount || 0}`;
+                document.getElementById('repeatAudio').checked = data.repeatAudio || false;
+                return;
+            }
+            cursor.continue();
+        }
+    };
+}
+
+// Carregar vídeo do IndexedDB
+function loadVideo() {
+    if (!db) return;
+
+    const transaction = db.transaction([STORE_NAME_AUDIO], 'readonly');
+    const store = transaction.objectStore(STORE_NAME_AUDIO);
+    const request = store.get('videoFile');
+
+    request.onsuccess = function (event) {
+        if (event.target.result) {
+            const videoBlob = event.target.result.blob;
+            const videoPlayer = document.getElementById('videoPlayer');
+            videoPlayer.src = URL.createObjectURL(videoBlob);
+        }
+    };
+}
+
+// Atualizar contagem de reproduções
+function updatePlayCount() {
+    if (!db || !currentAudioId) return;
+
+    const transaction = db.transaction([STORE_NAME_AUDIO], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME_AUDIO);
+    const request = store.get(currentAudioId);
+
+    request.onsuccess = function(event) {
+        const data = event.target.result;
+        if (data) {
+            data.playCount = (data.playCount || 0) + 1;
+            data.repeatAudio = document.getElementById('repeatAudio').checked;
+            store.put(data);
+            document.getElementById('playCount').textContent = `Reproduções Completas: ${data.playCount}`;
+        }
+    };
+}
+
+// Salvar texto formatado
+function saveFormattedText() {
+    if (!db) return;
+
+    const transaction = db.transaction([STORE_NAME_TEXT], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME_TEXT);
+    store.clear();
+    store.add({ id: 1, text: textPairs });
+}
+
+// Carregar dados salvos
+function loadSavedData() {
+    if (!db) return;
+
+    const transaction = db.transaction([STORE_NAME_TEXT], 'readonly');
+    const textStore = transaction.objectStore(STORE_NAME_TEXT);
+
+    const textRequest = textStore.get(1);
+    textRequest.onsuccess = function (event) {
+        if (event.target.result) {
+            textPairs = event.target.result.text;
+            renderSavedText();
+        }
+    };
+
+    loadAudio();
+    loadVideo();
+}
+
+// Renderizar texto salvo
+function renderSavedText() {
+    const formattedTextDiv = document.getElementById('formattedText');
+    const editButton = document.getElementById('editTextBtn');
+
+    formattedTextDiv.innerHTML = '';
+    formattedTextDiv.appendChild(editButton);
+
+    textPairs.forEach((pair, index) => {
+        const pairDiv = document.createElement('div');
+        pairDiv.classList.add('text-pair');
+
+        const englishP = document.createElement('p');
+        englishP.classList.add('english');
+        englishP.textContent = pair.english;
+
+        const portugueseP = document.createElement('p');
+        portugueseP.classList.add('portuguese');
+        portugueseP.textContent = pair.portuguese;
+
+        pairDiv.appendChild(englishP);
+        pairDiv.appendChild(portugueseP);
+
+        pairDiv.addEventListener('click', () => toggleAudio(pairDiv, index));
+
+        formattedTextDiv.appendChild(pairDiv);
+    });
+
+    document.getElementById('textInputSection').style.display = 'none';
+    formattedTextDiv.style.display = 'block';
+}
+
+// Toggle de áudio com sincronização precisa
+function toggleAudio(pairDiv, index) {
+    const audioPlayer = document.getElementById('audioPlayer');
+    
+    if (!audioPlayer.src) return;
+    
+    document.querySelectorAll('.text-pair').forEach(pair => {
+        pair.classList.remove('active');
+    });
+    
+    if (textTimings.length === 0) {
+        textTimings = calculateSmartTextTimings();
+    }
+    
+    audioPlayer.currentTime = textTimings[index].start;
+    audioPlayer.play();
+    
+    pairDiv.classList.add('active');
+    currentPairIndex = index;
+}
+
+// Evento de fim de reprodução de áudio
+function handleAudioEnded() {
+    const repeatAudio = document.getElementById('repeatAudio').checked;
+
+    updatePlayCount();
+
+    clearInterval(audioSyncInterval);
+    currentPairIndex = 0;
+
+    document.querySelectorAll('.text-pair').forEach(pair => {
+        pair.classList.remove('active');
+    });
+
+    if (repeatAudio) {
+        const audioPlayer = document.getElementById('audioPlayer');
+        audioPlayer.currentTime = 0;
+        audioPlayer.play();
+        const firstPair = document.querySelector('.text-pair');
+        if (firstPair) {
+            firstPair.classList.add('active');
+        }
+    }
+}
+
+// Formatação de texto
+function formatText() {
+    const textInput = document.getElementById('textInput');
+    textPairs = [];
+
+    const lines = textInput.value.split('\n').filter(line => line.trim() !== '');
+
+    for (let i = 0; i < lines.length; i += 2) {
+        if (lines[i + 1]) {
+            textPairs.push({
+                english: lines[i].trim(),
+                portuguese: lines[i + 1].trim()
+            });
+        }
+    }
+
+    renderSavedText();
+    saveFormattedText();
+    
+    textTimings = [];
+}
+
+// Inicialização e Event Listeners
+document.addEventListener('DOMContentLoaded', () => {
+    initDB();
+
+    const audioPlayer = document.getElementById('audioPlayer');
+    const audioUpload = document.getElementById('audioUpload');
+    const repeatCheckbox = document.getElementById('repeatAudio');
+    const videoUpload = document.getElementById('videoUpload');
+    const videoPlayer = document.getElementById('videoPlayer');
+    const toggleVideoBtn = document.getElementById('toggleVideoBtn');
+    const videoContainer = document.getElementById('videoContainer');
+    const textContainer = document.getElementById('textContainer');
+    const editTextBtn = document.getElementById('editTextBtn');
+    const textInputSection = document.getElementById('textInputSection');
+    const formattedText = document.getElementById('formattedText');
+
+    audioUpload.addEventListener('change', function (e) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+
+        reader.onload = function (e) {
+            const arrayBuffer = e.target.result;
+            audioBlob = new Blob([arrayBuffer], { type: file.type });
+            audioPlayer.src = URL.createObjectURL(audioBlob);
+            saveAudio(audioBlob, file);
+            textTimings = [];
+        };
+
+        reader.readAsArrayBuffer(file);
+    });
+
+    videoUpload.addEventListener('change', function (e) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+
+        reader.onload = function (e) {
+            const arrayBuffer = e.target.result;
+            videoBlob = new Blob([arrayBuffer], { type: file.type });
+            videoPlayer.src = URL.createObjectURL(videoBlob);
+            saveVideo(videoBlob);
+        };
+
+        reader.readAsArrayBuffer(file);
+    });
+
+    audioPlayer.addEventListener('ended', handleAudioEnded);
+    
+    audioPlayer.addEventListener('play', () => {
+        startSmartAutoSync();
+    });
+
+    repeatCheckbox.addEventListener('change', function () {
+        if (db && currentAudioId) {
+            const transaction = db.transaction([STORE_NAME_AUDIO], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME_AUDIO);
+            const request = store.get(currentAudioId);
+
+            request.onsuccess = function(event) {
+                const data = event.target.result;
+                if (data) {
+                    data.repeatAudio = repeatCheckbox.checked;
+                    store.put(data);
+                }
+            };
+        }
+    });
+
+    toggleVideoBtn.addEventListener('click', function () {
+        const isVideoVisible = videoContainer.style.display === 'block';
+
+        if (isVideoVisible) {
+            videoContainer.style.display = 'none';
+            textContainer.classList.remove('with-video');
+            toggleVideoBtn.textContent = 'Ver Vídeo Aula';
+        } else {
+            videoContainer.style.display = 'block';
+            textContainer.classList.add('with-video');
+            toggleVideoBtn.textContent = 'Ocultar Vídeo Aula';
+        }
+    });
+
+    editTextBtn.addEventListener('click', function () {
+        textInputSection.style.display = 'block';
+        formattedText.style.display = 'none';
+        const textContent = textPairs.map(pair => `${pair.english}\n${pair.portuguese}`).join('\n');
+        document.getElementById('textInput').value = textContent;
+    });
+});
+	  
+    
+		
+    </script>
+</body>
+
+</html>
